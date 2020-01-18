@@ -1,13 +1,13 @@
 const Apify = require('apify');
-const { log } = require('./helpers');
-const { PAGE_TYPES } = require('./consts');
-const { getPostLikes } = require('./likes');
-const { getProfileFollowedBy } = require('./followed_by');
-const { getProfileFollowing } = require('./following');
+const {log} = require('./helpers');
+const {PAGE_TYPES} = require('./consts');
+const {getPostLikes} = require('./likes');
+const {getProfileFollowedBy} = require('./followed_by');
+const {getProfileFollowing} = require('./following');
 
 // Formats IGTV Video Post edge item into nicely formated output item
 const formatIGTVVideo = (edge) => {
-    const { node } = edge;
+    const {node} = edge;
     return {
         type: 'Video',
         shortCode: node.shortcode,
@@ -36,6 +36,7 @@ const formatSinglePost = (node) => {
     const comments = node.edge_media_to_comment || node.edge_media_to_parent_comment || node.edge_media_preview_comment;
     const likes = node.edge_liked_by || node.edge_media_preview_like;
     return {
+        id: node.id,
         type: node.__typename ? node.__typename.replace('Graph', '') : (node.is_video ? 'Video' : 'Image'),
         shortCode: node.shortcode,
         caption: (node.edge_media_to_caption && node.edge_media_to_caption.edges.length) ? node.edge_media_to_caption.edges[0].node.text : '',
@@ -47,11 +48,13 @@ const formatSinglePost = (node) => {
         likesCount: likes ? likes.count : null,
         videoDuration: node.video_duration,
         videoViewCount: node.video_view_count,
-        timestamp: node.taken_at_timestamp ? new Date(parseInt(node.taken_at_timestamp) * 1000) : null,
+        timestamp: node.taken_at_timestamp,
         locationName: node.location ? node.location.name : null,
         ownerFullName: node.owner ? node.owner.full_name : null,
+        thumbnail: node.thumbnail_src,
+        thumbnail_resources: node.thumbnail_resources,
     };
-}
+};
 
 // Translates word to have first letter uppercased so word will become Word
 const uppercaseFirstLetter = (word) => {
@@ -71,7 +74,7 @@ const formatJSONAddress = (jsonAddress) => {
     const result = {};
     Object.keys(address).forEach((key) => {
         const parsedKey = key.split('_').map(uppercaseFirstLetter).join('');
-        result[`address${parsedKey}`] = address[key]; 
+        result[`address${parsedKey}`] = address[key];
     });
     return result;
 }
@@ -143,7 +146,7 @@ const formatHashtagOutput = (request, data) => ({
 });
 
 // Formats data from window._shared_data.entry_data.PostPage[0].graphql.shortcode_media to nicer output
-const formatPostOutput = async (input, request, data, page, itemSpec) => { 
+const formatPostOutput = async (input, request, data, page, itemSpec) => {
     const likedBy = await getPostLikes(page, itemSpec, input);
     return {
         '#debug': Apify.utils.createRequestDebugInfo(request),
@@ -152,7 +155,7 @@ const formatPostOutput = async (input, request, data, page, itemSpec) => {
         hasRankedComments: data.has_ranked_comments,
         commentsDisabled: data.comments_disabled,
         displayResourceUrls: formatDisplayResources(data.display_resources),
-        childPosts: data.edge_sidecar_to_children ? data.edge_sidecar_to_children.edges.map((child) => formatSinglePost(child.node)) : null, 
+        childPosts: data.edge_sidecar_to_children ? data.edge_sidecar_to_children.edges.map((child) => formatSinglePost(child.node)) : null,
         locationSlug: data.location ? data.location.slug : null,
         ownerUsername: data.owner ? data.owner.username : null,
         isAdvertisement: typeof data.is_ad !== 'undefined' ? data.is_ad : null,
@@ -168,10 +171,14 @@ const formatPostOutput = async (input, request, data, page, itemSpec) => {
 // Finds correct variable in window._shared_data.entry_data based on pageType
 const getOutputFromEntryData = (input, itemSpec, request, data, page) => {
     switch (itemSpec.pageType) {
-        case PAGE_TYPES.PLACE: return formatPlaceOutput(request, data.LocationsPage[0].graphql.location, page, itemSpec);
-        case PAGE_TYPES.PROFILE: return formatProfileOutput(input, request, data.ProfilePage[0].graphql.user, page, itemSpec);
-        case PAGE_TYPES.HASHTAG: return formatHashtagOutput(request, data.TagPage[0].graphql.hashtag, page, itemSpec);
-        case PAGE_TYPES.POST: return formatPostOutput(input, request, data.PostPage[0].graphql.shortcode_media, page, itemSpec);
+        case PAGE_TYPES.PLACE:
+            return formatPlaceOutput(request, data.LocationsPage[0].graphql.location, page, itemSpec);
+        case PAGE_TYPES.PROFILE:
+            return formatProfileOutput(input, request, data.ProfilePage[0].graphql.user, page, itemSpec);
+        case PAGE_TYPES.HASHTAG:
+            return formatHashtagOutput(request, data.TagPage[0].graphql.hashtag, page, itemSpec);
+        case PAGE_TYPES.POST:
+            return formatPostOutput(input, request, data.PostPage[0].graphql.shortcode_media, page, itemSpec);
     }
 };
 
